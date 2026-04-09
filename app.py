@@ -1,24 +1,30 @@
 import os
 import json
 import sqlite3
-import hashlib
 import secrets
-import time
 from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for, 
                    session, flash, jsonify, g)
-from werkzeug.security import generate_password_hash, check_password_hash
-import requests
-
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+import requests as http_requests
 
 from dotenv import load_dotenv
+
+# Groq AI
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+
+# Firebase Admin for token verification
+try:
+    import firebase_admin
+    from firebase_admin import credentials, auth as firebase_auth
+    FIREBASE_ADMIN_AVAILABLE = True
+except ImportError:
+    FIREBASE_ADMIN_AVAILABLE = False
 
 load_dotenv()
 
@@ -26,15 +32,45 @@ app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', secrets.token_hex(32))
 app.config['DATABASE'] = os.path.join(os.path.dirname(__file__), 'skillswap.db')
 
-# Gemini AI Setup
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+# ─── Groq AI Setup ──────────────────────────────────────────────────────
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 
-if GEMINI_AVAILABLE and GEMINI_API_KEY and GEMINI_API_KEY != 'your_gemini_api_key_here':
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-2.0-flash')
-else:
-    gemini_model = None
+groq_client = None
+if GROQ_AVAILABLE and GROQ_API_KEY:
+    groq_client = Groq(api_key=GROQ_API_KEY)
+
+# ─── Firebase Admin Setup ───────────────────────────────────────────────
+firebase_app = None
+FIREBASE_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'firebase-service-account.json')
+
+if FIREBASE_ADMIN_AVAILABLE:
+    try:
+        if os.path.exists(FIREBASE_CONFIG_PATH):
+            cred = credentials.Certificate(FIREBASE_CONFIG_PATH)
+            firebase_app = firebase_admin.initialize_app(cred)
+            print("✅ Firebase Admin initialized with service account")
+        else:
+            # Initialize without credentials (for development — uses FIREBASE_AUTH_EMULATOR_HOST or GOOGLE_APPLICATION_CREDENTIALS)
+            firebase_app = firebase_admin.initialize_app()
+            print("⚠️ Firebase Admin initialized without service account (limited functionality)")
+    except Exception as e:
+        print(f"⚠️ Firebase Admin init error: {e}")
+        firebase_app = None
+
+# Firebase Web Config (injected into templates)
+FIREBASE_WEB_CONFIG = {
+    'apiKey': os.getenv('FIREBASE_API_KEY', ''),
+    'authDomain': os.getenv('FIREBASE_AUTH_DOMAIN', ''),
+    'projectId': os.getenv('FIREBASE_PROJECT_ID', ''),
+    'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', ''),
+    'messagingSenderId': os.getenv('FIREBASE_MESSAGING_SENDER_ID', ''),
+    'appId': os.getenv('FIREBASE_APP_ID', ''),
+}
+
+@app.context_processor
+def inject_firebase_config():
+    return {'firebase_config': FIREBASE_WEB_CONFIG}
 
 # ─── Database ───────────────────────────────────────────────────────────
 
@@ -60,9 +96,10 @@ def init_db():
     db.executescript('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            firebase_uid TEXT UNIQUE,
             name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
+            photo_url TEXT DEFAULT '',
             college TEXT DEFAULT '',
             city TEXT DEFAULT '',
             bio TEXT DEFAULT '',
@@ -154,7 +191,7 @@ def init_db():
     db.commit()
     db.close()
 
-# ─── Auth Decorators ────────────────────────────────────────────────────
+# ─── Auth Helpers ───────────────────────────────────────────────────────
 
 def login_required(f):
     @wraps(f)
@@ -171,6 +208,50 @@ def get_current_user():
         return db.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
     return None
 
+def verify_firebase_token(id_token):
+    """Verify Firebase ID token and return decoded claims."""
+    if not FIREBASE_ADMIN_AVAILABLE or not firebase_app:
+        return None
+    try:
+        decoded_token = firebase_auth.verify_id_token(id_token)
+        return decoded_token
+    except Exception as e:
+        print(f"Firebase token verification error: {e}")
+        return None
+
+def get_or_create_firebase_user(decoded_token):
+    """Find existing user or create new one from Firebase token."""
+    db = get_db()
+    uid = decoded_token.get('uid', '')
+    email = decoded_token.get('email', '')
+    name = decoded_token.get('name', '') or email.split('@')[0]
+    photo = decoded_token.get('picture', '')
+    
+    # Try to find by firebase_uid first
+    user = db.execute('SELECT * FROM users WHERE firebase_uid = ?', (uid,)).fetchone()
+    if user:
+        # Update photo if changed
+        if photo and photo != user['photo_url']:
+            db.execute('UPDATE users SET photo_url = ?, avatar_url = ? WHERE id = ?', (photo, photo, user['id']))
+            db.commit()
+        return user
+    
+    # Try by email (might have been created before Firebase was added)
+    user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+    if user:
+        db.execute('UPDATE users SET firebase_uid = ?, photo_url = ?, avatar_url = ? WHERE id = ?', 
+                   (uid, photo, photo or user['avatar_url'], user['id']))
+        db.commit()
+        return db.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+    
+    # Create new user
+    db.execute('''
+        INSERT INTO users (firebase_uid, name, email, photo_url, avatar_url) 
+        VALUES (?, ?, ?, ?, ?)
+    ''', (uid, name, email, photo, photo))
+    db.commit()
+    return db.execute('SELECT * FROM users WHERE firebase_uid = ?', (uid,)).fetchone()
+
 # ─── GitHub API Integration ────────────────────────────────────────────
 
 def fetch_github_data(username):
@@ -180,26 +261,23 @@ def fetch_github_data(username):
         headers['Authorization'] = f'token {GITHUB_TOKEN}'
     
     try:
-        # User profile
-        user_resp = requests.get(f'https://api.github.com/users/{username}', headers=headers, timeout=10)
+        user_resp = http_requests.get(f'https://api.github.com/users/{username}', headers=headers, timeout=10)
         if user_resp.status_code != 200:
             return None
         user_data = user_resp.json()
         
-        # Repos
-        repos_resp = requests.get(
+        repos_resp = http_requests.get(
             f'https://api.github.com/users/{username}/repos?sort=updated&per_page=30',
             headers=headers, timeout=10
         )
         repos_data = repos_resp.json() if repos_resp.status_code == 200 else []
         
-        # Aggregate languages
         languages = {}
         repo_details = []
         for repo in repos_data[:15]:
             if repo.get('fork'):
                 continue
-            lang_resp = requests.get(repo.get('languages_url', ''), headers=headers, timeout=10)
+            lang_resp = http_requests.get(repo.get('languages_url', ''), headers=headers, timeout=10)
             if lang_resp.status_code == 200:
                 for lang, bytes_count in lang_resp.json().items():
                     languages[lang] = languages.get(lang, 0) + bytes_count
@@ -216,14 +294,12 @@ def fetch_github_data(username):
                 'size': repo.get('size', 0),
             })
         
-        # Events for activity analysis
-        events_resp = requests.get(
+        events_resp = http_requests.get(
             f'https://api.github.com/users/{username}/events?per_page=100',
             headers=headers, timeout=10
         )
         events_data = events_resp.json() if events_resp.status_code == 200 else []
         
-        # Count recent activity
         push_events = len([e for e in events_data if e.get('type') == 'PushEvent'])
         pr_events = len([e for e in events_data if e.get('type') == 'PullRequestEvent'])
         issue_events = len([e for e in events_data if e.get('type') == 'IssuesEvent'])
@@ -251,9 +327,11 @@ def fetch_github_data(username):
         print(f"GitHub API error: {e}")
         return None
 
+# ─── Groq AI Analysis ──────────────────────────────────────────────────
+
 def analyze_with_ai(github_data):
-    """Use Gemini AI to analyze GitHub profile and assign skill values."""
-    if not gemini_model:
+    """Use Groq AI (LLaMA) to analyze GitHub profile and assign skill values."""
+    if not groq_client:
         return generate_fallback_analysis(github_data)
     
     prompt = f"""You are an AI skill evaluator for engineering students. Analyze this GitHub profile data and provide a comprehensive skill assessment.
@@ -261,7 +339,7 @@ def analyze_with_ai(github_data):
 GitHub Profile Data:
 {json.dumps(github_data, indent=2, default=str)}
 
-RESPOND IN VALID JSON ONLY (no markdown, no code blocks). Use this exact format:
+RESPOND IN VALID JSON ONLY (no markdown, no code blocks, no extra text). Use this exact format:
 {{
     "overall_score": <0-100>,
     "skills": [
@@ -285,15 +363,24 @@ Rules:
 """
     
     try:
-        response = gemini_model.generate_content(prompt)
-        text = response.text.strip()
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a JSON-only responder. Output valid JSON with no markdown formatting, no code blocks, no extra text."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000,
+            response_format={"type": "json_object"},
+        )
+        text = response.choices[0].message.content.strip()
         # Clean up markdown code blocks if present
         if text.startswith('```'):
             text = text.split('\n', 1)[1]
             text = text.rsplit('```', 1)[0]
         return json.loads(text)
     except Exception as e:
-        print(f"Gemini AI error: {e}")
+        print(f"Groq AI error: {e}")
         return generate_fallback_analysis(github_data)
 
 def generate_fallback_analysis(github_data):
@@ -340,39 +427,32 @@ def calculate_match_score(user1, user2, user1_skills, user2_skills):
     """Calculate compatibility score between two users."""
     score = 0
     
-    # Parse preferences
     u1_learn = json.loads(user1['want_to_learn']) if user1['want_to_learn'] else []
     u1_teach = json.loads(user1['can_teach']) if user1['can_teach'] else []
     u2_learn = json.loads(user2['want_to_learn']) if user2['want_to_learn'] else []
     u2_teach = json.loads(user2['can_teach']) if user2['can_teach'] else []
     
-    # Skill complementarity (I want to learn what you can teach)
     u1_skill_names = {s['skill_name'].lower() for s in user1_skills}
     u2_skill_names = {s['skill_name'].lower() for s in user2_skills}
     
-    # Check if user1's learning goals match user2's teaching abilities
     for skill in u1_learn:
         if skill.lower() in [t.lower() for t in u2_teach]:
             score += 25
         if skill.lower() in u2_skill_names:
             score += 10
     
-    # Check reverse
     for skill in u2_learn:
         if skill.lower() in [t.lower() for t in u1_teach]:
             score += 25
         if skill.lower() in u1_skill_names:
             score += 10
     
-    # Same city bonus
-    if user1['city'].lower() == user2['city'].lower() and user1['city']:
+    if user1['city'] and user2['city'] and user1['city'].lower() == user2['city'].lower():
         score += 15
     
-    # Same college bonus
-    if user1['college'].lower() == user2['college'].lower() and user1['college']:
+    if user1['college'] and user2['college'] and user1['college'].lower() == user2['college'].lower():
         score += 10
     
-    # Skill diversity bonus (different skill sets)
     overlap = u1_skill_names & u2_skill_names
     total = u1_skill_names | u2_skill_names
     if total:
@@ -387,7 +467,6 @@ def find_matches(user_id, limit=20):
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     user_skills = db.execute('SELECT * FROM skills WHERE user_id = ?', (user_id,)).fetchall()
     
-    # Get all other users
     other_users = db.execute('SELECT * FROM users WHERE id != ?', (user_id,)).fetchall()
     
     matches = []
@@ -402,74 +481,93 @@ def find_matches(user_id, limit=20):
                 'match_score': match_score,
             })
     
-    # Sort by match score
     matches.sort(key=lambda x: x['match_score'], reverse=True)
     return matches[:limit]
 
-# ─── Routes: Auth ────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES: Firebase Authentication
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/')
 def index():
     user = get_current_user()
     return render_template('index.html', user=user)
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '')
-        college = request.form.get('college', '').strip()
-        city = request.form.get('city', '').strip()
-        
-        if not all([name, email, password]):
-            flash('Name, email and password are required.', 'error')
-            return redirect(url_for('register'))
-        
-        db = get_db()
-        existing = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
-        if existing:
-            flash('Email already registered.', 'error')
-            return redirect(url_for('register'))
-        
-        password_hash = generate_password_hash(password)
-        db.execute(
-            'INSERT INTO users (name, email, password_hash, college, city) VALUES (?, ?, ?, ?, ?)',
-            (name, email, password_hash, college, city)
-        )
-        db.commit()
-        
-        user = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
-        session['user_id'] = user['id']
-        flash('Welcome to SkillSwap! 🎉', 'success')
+@app.route('/login')
+def login():
+    if 'user_id' in session:
         return redirect(url_for('dashboard'))
-    
+    return render_template('login.html')
+
+@app.route('/register')
+def register():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
     return render_template('register.html')
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '')
+@app.route('/auth/firebase-callback', methods=['POST'])
+def firebase_callback():
+    """Receive Firebase ID token from frontend, verify it, create/get user."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    id_token = data.get('idToken', '')
+    
+    # Try to verify with Firebase Admin
+    decoded = verify_firebase_token(id_token)
+    
+    if decoded:
+        # Firebase Admin verified the token
+        user = get_or_create_firebase_user(decoded)
+    else:
+        # Fallback: trust the frontend data (for dev without service account)
+        email = data.get('email', '')
+        name = data.get('displayName', '') or email.split('@')[0]
+        photo = data.get('photoURL', '')
+        uid = data.get('uid', '')
+        
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
         
         db = get_db()
         user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
         
-        if user and check_password_hash(user['password_hash'], password):
-            session['user_id'] = user['id']
-            flash('Welcome back! 👋', 'success')
-            return redirect(url_for('dashboard'))
-        
-        flash('Invalid credentials.', 'error')
-    return render_template('login.html')
+        if not user:
+            db.execute('''
+                INSERT INTO users (firebase_uid, name, email, photo_url, avatar_url) 
+                VALUES (?, ?, ?, ?, ?)
+            ''', (uid, name, email, photo, photo))
+            db.commit()
+            user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        else:
+            # Update firebase_uid and photo if needed
+            if uid and not user['firebase_uid']:
+                db.execute('UPDATE users SET firebase_uid = ? WHERE id = ?', (uid, user['id']))
+            if photo and photo != user['photo_url']:
+                db.execute('UPDATE users SET photo_url = ?, avatar_url = ? WHERE id = ?', 
+                          (photo, photo, user['id']))
+            db.commit()
+            user = db.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+    
+    if user:
+        session['user_id'] = user['id']
+        return jsonify({
+            'success': True, 
+            'redirect': url_for('dashboard'),
+            'message': 'Welcome to SkillSwap! 🎉'
+        })
+    
+    return jsonify({'error': 'Authentication failed'}), 401
 
 @app.route('/logout')
 def logout():
     session.clear()
-    flash('Logged out successfully.', 'info')
     return redirect(url_for('index'))
 
-# ─── Routes: Dashboard ──────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES: Dashboard
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/dashboard')
 @login_required
@@ -478,7 +576,6 @@ def dashboard():
     user = get_current_user()
     skills = db.execute('SELECT * FROM skills WHERE user_id = ? ORDER BY skill_value DESC', (session['user_id'],)).fetchall()
     
-    # Stats
     total_sessions = db.execute('''
         SELECT COUNT(*) as count FROM sessions s 
         JOIN matches m ON s.match_id = m.id 
@@ -492,7 +589,6 @@ def dashboard():
     
     badges = db.execute('SELECT * FROM badges WHERE user_id = ?', (session['user_id'],)).fetchall()
     
-    # Recent activity  
     recent_sessions = db.execute('''
         SELECT s.*, u.name as peer_name FROM sessions s 
         JOIN matches m ON s.match_id = m.id 
@@ -505,7 +601,9 @@ def dashboard():
                          total_sessions=total_sessions, total_matches=total_matches,
                          badges=badges, recent_sessions=recent_sessions)
 
-# ─── Routes: Profile ────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES: Profile
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
@@ -523,7 +621,6 @@ def profile():
         can_teach = request.form.get('can_teach', '').strip()
         availability = request.form.get('availability', 'Flexible')
         
-        # Parse comma-separated values to JSON arrays
         learn_list = [s.strip() for s in want_to_learn.split(',') if s.strip()]
         teach_list = [s.strip() for s in can_teach.split(',') if s.strip()]
         
@@ -563,7 +660,9 @@ def view_profile(user_id):
     return render_template('view_profile.html', profile_user=user, skills=skills, 
                          reviews=reviews, badges=badges, user=current_user)
 
-# ─── Routes: GitHub Analysis ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES: GitHub Analysis
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/analyze', methods=['GET', 'POST'])
 @login_required
@@ -577,31 +676,25 @@ def analyze():
             flash('Please enter a GitHub username.', 'error')
             return redirect(url_for('analyze'))
         
-        # Fetch GitHub data
         github_data = fetch_github_data(github_username)
         if not github_data:
             flash('Could not fetch GitHub data. Check the username.', 'error')
             return redirect(url_for('analyze'))
         
-        # AI Analysis
         analysis = analyze_with_ai(github_data)
         analysis['github_data'] = github_data
         
-        # Save to database
         db = get_db()
         
-        # Update user's GitHub username and avatar
         avatar_url = github_data['profile'].get('avatar_url', '')
         db.execute('UPDATE users SET github_username=?, avatar_url=?, overall_score=? WHERE id=?',
                    (github_username, avatar_url, analysis.get('overall_score', 0), session['user_id']))
         
-        # Clear old skills and insert new ones
         db.execute('DELETE FROM skills WHERE user_id = ? AND verified_via = ?', (session['user_id'], 'github'))
         for skill in analysis.get('skills', []):
             db.execute('INSERT INTO skills (user_id, skill_name, skill_value, category, verified_via) VALUES (?, ?, ?, ?, ?)',
                        (session['user_id'], skill['name'], skill['value'], skill.get('category', 'Other'), 'github'))
         
-        # Update learning/teaching preferences from AI
         if analysis.get('recommended_to_learn'):
             current_learn = json.loads(user['want_to_learn']) if user['want_to_learn'] else []
             new_learn = list(set(current_learn + analysis['recommended_to_learn']))
@@ -612,11 +705,9 @@ def analyze():
             new_teach = list(set(current_teach + analysis['teaching_potential']))
             db.execute('UPDATE users SET can_teach = ? WHERE id = ?', (json.dumps(new_teach), session['user_id']))
         
-        # Save full analysis
         db.execute('INSERT INTO github_analyses (user_id, github_username, analysis_data) VALUES (?, ?, ?)',
                    (session['user_id'], github_username, json.dumps(analysis, default=str)))
         
-        # Award badge for first analysis
         existing_badge = db.execute('SELECT id FROM badges WHERE user_id = ? AND badge_name = ?', 
                                     (session['user_id'], 'GitHub Verified')).fetchone()
         if not existing_badge:
@@ -626,7 +717,6 @@ def analyze():
         db.commit()
         flash('GitHub profile analyzed successfully! 🧠', 'success')
     
-    # Get previous analyses
     db = get_db()
     past_analyses = db.execute('''
         SELECT * FROM github_analyses WHERE user_id = ? ORDER BY analyzed_at DESC LIMIT 5
@@ -634,7 +724,9 @@ def analyze():
     
     return render_template('analyze.html', user=user, analysis=analysis, past_analyses=past_analyses)
 
-# ─── Routes: Marketplace ────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES: Marketplace
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/marketplace')
 @login_required
@@ -642,7 +734,6 @@ def marketplace():
     db = get_db()
     user = get_current_user()
     
-    # Filters
     skill_filter = request.args.get('skill', '')
     city_filter = request.args.get('city', '')
     college_filter = request.args.get('college', '')
@@ -660,7 +751,6 @@ def marketplace():
     query += ' ORDER BY overall_score DESC'
     all_users = db.execute(query, params).fetchall()
     
-    # Enrich with skills
     profiles = []
     for u in all_users:
         skills = db.execute('SELECT * FROM skills WHERE user_id = ? ORDER BY skill_value DESC', (u['id'],)).fetchall()
@@ -677,7 +767,6 @@ def marketplace():
             'can_teach': json.loads(u['can_teach']) if u['can_teach'] else [],
         })
     
-    # Get unique cities and colleges for filters
     cities = db.execute('SELECT DISTINCT city FROM users WHERE city != "" ORDER BY city').fetchall()
     colleges = db.execute('SELECT DISTINCT college FROM users WHERE college != "" ORDER BY college').fetchall()
     
@@ -685,7 +774,9 @@ def marketplace():
                          cities=cities, colleges=colleges,
                          skill_filter=skill_filter, city_filter=city_filter, college_filter=college_filter)
 
-# ─── Routes: Matching ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES: Matching
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/matches')
 @login_required
@@ -693,10 +784,8 @@ def matches():
     db = get_db()
     user = get_current_user()
     
-    # AI-suggested matches
     suggested = find_matches(session['user_id'])
     
-    # Existing matches
     existing = db.execute('''
         SELECT m.*, 
             u1.name as user1_name, u1.avatar_url as user1_avatar,
@@ -715,7 +804,6 @@ def matches():
 def request_match(target_id):
     db = get_db()
     
-    # Check if match already exists
     existing = db.execute('''
         SELECT id FROM matches WHERE 
         (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)
@@ -725,7 +813,6 @@ def request_match(target_id):
         flash('Match already exists!', 'info')
         return redirect(url_for('matches'))
     
-    # Calculate match score
     user = get_current_user()
     target = db.execute('SELECT * FROM users WHERE id = ?', (target_id,)).fetchone()
     user_skills = db.execute('SELECT * FROM skills WHERE user_id = ?', (session['user_id'],)).fetchall()
@@ -761,7 +848,9 @@ def respond_match(match_id, action):
     
     return redirect(url_for('matches'))
 
-# ─── Routes: Sessions ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES: Sessions
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/sessions')
 @login_required
@@ -779,7 +868,6 @@ def sessions():
         ORDER BY s.created_at DESC
     ''', (session['user_id'], session['user_id'], session['user_id'])).fetchall()
     
-    # Get accepted matches for new session creation
     accepted_matches = db.execute('''
         SELECT m.*, u.name as peer_name FROM matches m
         JOIN users u ON u.id = CASE WHEN m.user1_id = ? THEN m.user2_id ELSE m.user1_id END
@@ -837,7 +925,6 @@ def view_session(session_id):
         ORDER BY msg.sent_at ASC
     ''', (session_id,)).fetchall()
     
-    # Check if review exists
     existing_review = db.execute('SELECT id FROM reviews WHERE session_id = ? AND reviewer_id = ?',
                                   (session_id, session['user_id'])).fetchone()
     
@@ -856,7 +943,6 @@ def respond_session(session_id, action):
         flash('Session declined.', 'info')
     elif action == 'complete':
         db.execute('UPDATE sessions SET status = ? WHERE id = ?', ('completed', session_id))
-        # Award badge
         sess = db.execute('SELECT * FROM sessions WHERE id = ?', (session_id,)).fetchone()
         match = db.execute('SELECT * FROM matches WHERE id = ?', (sess['match_id'],)).fetchone()
         for uid in [match['user1_id'], match['user2_id']]:
