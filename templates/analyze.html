@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}AI GitHub Analysis{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="section-header fade-in">
+        <h2>🧠 AI GitHub <span class="text-gradient">Analyzer</span></h2>
+        <p>Connect your GitHub profile and let our AI agent evaluate your skills</p>
+    </div>
+
+    <!-- Analysis Form -->
+    <div class="card-flat fade-in stagger-1" style="max-width:600px; margin-bottom:var(--space-xl);">
+        <form method="POST" action="{{ url_for('analyze') }}" id="analyze-form">
+            <div class="form-group">
+                <label class="form-label" for="github_username">GitHub Username</label>
+                <div class="flex gap-sm">
+                    <input type="text" id="github_username" name="github_username" class="form-input" 
+                           placeholder="e.g. octocat" value="{{ user.github_username or '' }}" required>
+                    <button type="submit" class="btn btn-primary" id="analyze-btn">
+                        🧠 Analyze
+                    </button>
+                </div>
+                <span class="form-hint">We'll analyze your repos, languages, commits, and activity</span>
+            </div>
+        </form>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" style="display:none; text-align:center; padding:var(--space-3xl);">
+        <div class="spinner" style="margin:0 auto var(--space-lg);"></div>
+        <h3>Analyzing GitHub Profile...</h3>
+        <p class="pulse">Our AI agent is evaluating your repos, code, and activity patterns</p>
+    </div>
+
+    <!-- Analysis Result -->
+    {% if analysis %}
+    <div class="analysis-card fade-in stagger-2">
+        <!-- Header -->
+        <div class="analysis-header">
+            {% if analysis.github_data %}
+            <img src="{{ analysis.github_data.profile.avatar_url or '' }}" alt="Avatar" class="avatar avatar-xl">
+            <div>
+                <h2 style="margin-bottom:0.25rem;">{{ analysis.github_data.profile.name }}</h2>
+                <p>{{ analysis.github_data.profile.bio or 'GitHub Developer' }}</p>
+                <div class="flex gap-lg" style="margin-top:var(--space-sm);">
+                    <span class="text-secondary">📦 {{ analysis.github_data.profile.public_repos }} repos</span>
+                    <span class="text-secondary">👥 {{ analysis.github_data.profile.followers }} followers</span>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Overall Score -->
+            <div class="score-ring" style="margin-left:auto;">
+                <svg width="120" height="120" viewBox="0 0 120 120">
+                    <defs>
+                        <linearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#7c5cf5"/>
+                            <stop offset="100%" style="stop-color:#06b6d4"/>
+                        </linearGradient>
+                    </defs>
+                    <circle cx="60" cy="60" r="54" class="score-ring-bg"/>
+                    <circle cx="60" cy="60" r="54" class="score-ring-fill" 
+                            id="score-ring" data-score="{{ analysis.overall_score }}"/>
+                </svg>
+                <div class="score-ring-value">{{ analysis.overall_score }}</div>
+            </div>
+        </div>
+
+        <div class="analysis-body">
+            <!-- Profile Summary -->
+            {% if analysis.profile_summary %}
+            <div class="analysis-section">
+                <div class="card" style="background:var(--gradient-hero); border-color:rgba(124,92,245,0.2);">
+                    <p style="color:var(--text-primary); font-size:1rem; line-height:1.7;">
+                        💡 {{ analysis.profile_summary }}
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="grid-2">
+                <!-- Skills with Bars -->
+                <div class="analysis-section">
+                    <h3>📊 Skill-Value Scores</h3>
+                    {% for skill in analysis.skills %}
+                    <div class="skill-bar">
+                        <span class="skill-bar-name">{{ skill.name }}</span>
+                        <div class="skill-bar-track">
+                            <div class="skill-bar-fill" style="width:0%; background:{% if skill.value >= 80 %}var(--gradient-success){% elif skill.value >= 50 %}var(--gradient-primary){% else %}var(--gradient-warm){% endif %};" data-width="{{ skill.value }}"></div>
+                        </div>
+                        <span class="skill-bar-value">{{ skill.value }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Strengths & Growth -->
+                <div>
+                    <div class="analysis-section">
+                        <h3>💪 Strengths</h3>
+                        <div class="flex flex-wrap gap-sm">
+                            {% for strength in analysis.strengths %}
+                            <span class="badge badge-success">✅ {{ strength }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="analysis-section">
+                        <h3>🌱 Growth Areas</h3>
+                        <div class="flex flex-wrap gap-sm">
+                            {% for area in analysis.growth_areas %}
+                            <span class="badge badge-warning">📈 {{ area }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="analysis-section">
+                        <h3>📚 Recommended to Learn</h3>
+                        <div class="flex flex-wrap gap-sm">
+                            {% for skill in analysis.recommended_to_learn %}
+                            <span class="badge badge-accent">🎯 {{ skill }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="analysis-section">
+                        <h3>🎓 You Can Teach</h3>
+                        <div class="flex flex-wrap gap-sm">
+                            {% for skill in analysis.teaching_potential %}
+                            <span class="badge badge-primary">💡 {{ skill }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Repository Analysis -->
+            {% if analysis.github_data and analysis.github_data.repos %}
+            <div class="analysis-section">
+                <h3>📦 Top Repositories</h3>
+                <div class="grid-2">
+                    {% for repo in analysis.github_data.repos[:6] %}
+                    <div class="card" style="padding:var(--space-md);">
+                        <div class="flex-between" style="margin-bottom:var(--space-xs);">
+                            <strong style="font-size:0.9rem;">{{ repo.name }}</strong>
+                            <span class="skill-tag" style="font-size:0.7rem;">{{ repo.language or '—' }}</span>
+                        </div>
+                        <p style="font-size:0.8rem; margin-bottom:var(--space-sm);">{{ repo.description[:80] }}{% if repo.description|length > 80 %}...{% endif %}</p>
+                        <div class="flex gap-md">
+                            <span class="text-muted" style="font-size:0.75rem;">⭐ {{ repo.stars }}</span>
+                            <span class="text-muted" style="font-size:0.75rem;">🍴 {{ repo.forks }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div style="text-align:center; margin-top:var(--space-xl);">
+                <a href="{{ url_for('marketplace') }}" class="btn btn-primary btn-lg">🏪 Find Skill-Swap Partners →</a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Past Analyses -->
+    {% if past_analyses %}
+    <div class="card-flat fade-in" style="margin-top:var(--space-xl);">
+        <h3 style="margin-bottom:var(--space-md);">📋 Past Analyses</h3>
+        <div class="table-container" style="border:none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>GitHub Username</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pa in past_analyses %}
+                    <tr>
+                        <td>@{{ pa.github_username }}</td>
+                        <td class="text-muted">{{ pa.analyzed_at[:16] if pa.analyzed_at else 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Form loading state
+document.getElementById('analyze-form').addEventListener('submit', function() {
+    document.getElementById('analyze-btn').disabled = true;
+    document.getElementById('analyze-btn').innerHTML = '<span class="spinner" style="width:18px;height:18px;border-width:2px;"></span> Analyzing...';
+    document.getElementById('loading-state').style.display = 'block';
+});
+
+// Animate skill bars
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        document.querySelectorAll('.skill-bar-fill').forEach(bar => {
+            bar.style.width = bar.dataset.width + '%';
+        });
+    }, 500);
+    
+    // Animate score ring
+    const ring = document.getElementById('score-ring');
+    if (ring) {
+        const score = parseInt(ring.dataset.score);
+        const circumference = 2 * Math.PI * 54;
+        const offset = circumference - (score / 100) * circumference;
+        setTimeout(() => {
+            ring.style.strokeDashoffset = offset;
+        }, 300);
+    }
+});
+</script>
+{% endblock %}

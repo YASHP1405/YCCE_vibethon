@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Leaderboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="flex-between fade-in" style="margin-bottom:var(--space-xl); flex-wrap:wrap; gap:var(--space-md);">
+        <div class="section-header" style="margin-bottom:0;">
+            <h2>🏆 Skill <span class="text-gradient">Leaderboard</span></h2>
+            <p>Top skill swappers ranked by overall score</p>
+        </div>
+        
+        <form method="GET" action="{{ url_for('leaderboard') }}" class="flex gap-sm">
+            <select name="city" class="form-select" onchange="this.form.submit()" style="min-width:180px;">
+                <option value="">🌍 All Cities</option>
+                {% for c in cities %}
+                <option value="{{ c.city }}" {% if city_filter == c.city %}selected{% endif %}>{{ c.city }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    <!-- Top 3 Podium -->
+    {% if leaders|length >= 3 %}
+    <div class="grid-3 fade-in stagger-1" style="margin-bottom:var(--space-xl);">
+        <!-- Second Place -->
+        <div class="card" style="text-align:center; margin-top:var(--space-xl);">
+            <div class="leaderboard-rank rank-2" style="margin:0 auto var(--space-md); font-size:1.2rem;">2</div>
+            {% if leaders[1].avatar_url %}
+            <img src="{{ leaders[1].avatar_url }}" alt="Avatar" class="avatar avatar-lg" style="margin:0 auto var(--space-sm); display:block;">
+            {% else %}
+            <div class="avatar-placeholder avatar-lg" style="width:72px;height:72px;font-size:1.5rem;margin:0 auto var(--space-sm);">{{ leaders[1].name[0] }}</div>
+            {% endif %}
+            <h4>{{ leaders[1].name }}</h4>
+            <p class="text-muted" style="font-size:0.8rem;">{{ leaders[1].college or '' }}</p>
+            <div class="text-gradient" style="font-size:1.5rem; font-weight:800; margin-top:var(--space-sm);">{{ leaders[1].overall_score or 0 }}</div>
+            <p class="text-muted" style="font-size:0.75rem;">{{ leaders[1].session_count or 0 }} sessions</p>
+        </div>
+        
+        <!-- First Place -->
+        <div class="card" style="text-align:center; border-color:rgba(251,191,36,0.3); box-shadow:0 0 40px rgba(251,191,36,0.1);">
+            <div style="font-size:2rem; margin-bottom:var(--space-sm);">👑</div>
+            <div class="leaderboard-rank rank-1" style="margin:0 auto var(--space-md); font-size:1.5rem; width:56px; height:56px;">1</div>
+            {% if leaders[0].avatar_url %}
+            <img src="{{ leaders[0].avatar_url }}" alt="Avatar" class="avatar avatar-xl" style="margin:0 auto var(--space-sm); display:block;">
+            {% else %}
+            <div class="avatar-placeholder avatar-xl" style="width:96px;height:96px;font-size:2.5rem;margin:0 auto var(--space-sm);">{{ leaders[0].name[0] }}</div>
+            {% endif %}
+            <h3>{{ leaders[0].name }}</h3>
+            <p class="text-muted" style="font-size:0.85rem;">{{ leaders[0].college or '' }}</p>
+            <div class="text-gradient" style="font-size:2rem; font-weight:900; margin-top:var(--space-sm);">{{ leaders[0].overall_score or 0 }}</div>
+            <p class="text-muted" style="font-size:0.8rem;">{{ leaders[0].session_count or 0 }} sessions • {{ leaders[0].badge_count or 0 }} badges</p>
+        </div>
+        
+        <!-- Third Place -->
+        <div class="card" style="text-align:center; margin-top:var(--space-2xl);">
+            <div class="leaderboard-rank rank-3" style="margin:0 auto var(--space-md); font-size:1.2rem;">3</div>
+            {% if leaders[2].avatar_url %}
+            <img src="{{ leaders[2].avatar_url }}" alt="Avatar" class="avatar avatar-lg" style="margin:0 auto var(--space-sm); display:block;">
+            {% else %}
+            <div class="avatar-placeholder avatar-lg" style="width:72px;height:72px;font-size:1.5rem;margin:0 auto var(--space-sm);">{{ leaders[2].name[0] }}</div>
+            {% endif %}
+            <h4>{{ leaders[2].name }}</h4>
+            <p class="text-muted" style="font-size:0.8rem;">{{ leaders[2].college or '' }}</p>
+            <div class="text-gradient" style="font-size:1.5rem; font-weight:800; margin-top:var(--space-sm);">{{ leaders[2].overall_score or 0 }}</div>
+            <p class="text-muted" style="font-size:0.75rem;">{{ leaders[2].session_count or 0 }} sessions</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Full Leaderboard Table -->
+    {% if leaders %}
+    <div class="table-container fade-in stagger-2">
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Student</th>
+                    <th>College</th>
+                    <th>City</th>
+                    <th>Score</th>
+                    <th>Sessions</th>
+                    <th>Badges</th>
+                    <th>Rating</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for leader in leaders %}
+                <tr>
+                    <td>
+                        {% if loop.index <= 3 %}
+                        <span class="leaderboard-rank rank-{{ loop.index }}" style="width:32px;height:32px;font-size:0.8rem;">{{ loop.index }}</span>
+                        {% else %}
+                        <span class="leaderboard-rank rank-default" style="width:32px;height:32px;font-size:0.8rem;">#{{ loop.index }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('view_profile', user_id=leader.id) }}" class="flex gap-sm" style="align-items:center; color:var(--text-primary);">
+                            {% if leader.avatar_url %}
+                            <img src="{{ leader.avatar_url }}" alt="Avatar" class="avatar avatar-sm">
+                            {% else %}
+                            <div class="avatar-placeholder avatar-sm" style="width:32px;height:32px;font-size:0.7rem;">{{ leader.name[0] }}</div>
+                            {% endif %}
+                            <strong>{{ leader.name }}</strong>
+                        </a>
+                    </td>
+                    <td class="text-muted">{{ leader.college or '—' }}</td>
+                    <td class="text-muted">{{ leader.city or '—' }}</td>
+                    <td><strong class="text-gradient">{{ leader.overall_score or 0 }}</strong></td>
+                    <td>{{ leader.session_count or 0 }}</td>
+                    <td>{{ leader.badge_count or 0 }}</td>
+                    <td>
+                        {% if leader.avg_rating %}
+                        ⭐ {{ "%.1f"|format(leader.avg_rating) }}
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state fade-in">
+        <div class="empty-state-icon">🏆</div>
+        <h3>Leaderboard is Empty</h3>
+        <p>Analyze your GitHub profile to get started and appear on the leaderboard!</p>
+        <a href="{{ url_for('analyze') }}" class="btn btn-primary">🧠 Analyze GitHub</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

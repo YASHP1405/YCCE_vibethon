@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Welcome Header -->
+    <div class="flex-between" style="margin-bottom:var(--space-xl); flex-wrap:wrap; gap:var(--space-md);">
+        <div>
+            <h1 class="fade-in" style="font-size:1.75rem;">
+                Welcome back, <span class="text-gradient">{{ user.name.split(' ')[0] }}</span> 👋
+            </h1>
+            <p class="fade-in stagger-1">Here's your skill overview and recent activity</p>
+        </div>
+        <div class="flex gap-sm fade-in stagger-2">
+            <a href="{{ url_for('analyze') }}" class="btn btn-primary">🧠 Analyze GitHub</a>
+            <a href="{{ url_for('marketplace') }}" class="btn btn-secondary">🏪 Browse Marketplace</a>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid-4 fade-in stagger-1" style="margin-bottom:var(--space-xl);">
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-primary">📊</div>
+            <div class="stat-value text-gradient">{{ user.overall_score or 0 }}</div>
+            <div class="stat-label">Overall Score</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-accent">🔬</div>
+            <div class="stat-value" style="color:var(--accent-400);">{{ skills|length }}</div>
+            <div class="stat-label">Skills Tracked</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-success">🤝</div>
+            <div class="stat-value" style="color:var(--success-400);">{{ total_matches }}</div>
+            <div class="stat-label">Active Matches</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-warning">💬</div>
+            <div class="stat-value" style="color:var(--warning-400);">{{ total_sessions }}</div>
+            <div class="stat-label">Sessions Done</div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <!-- Skills Overview -->
+        <div class="card-flat fade-in stagger-2">
+            <div class="flex-between" style="margin-bottom:var(--space-lg);">
+                <h3>🔬 My Skill-Values</h3>
+                <a href="{{ url_for('analyze') }}" class="btn btn-ghost btn-sm">Update →</a>
+            </div>
+            
+            {% if skills %}
+            <div style="display:flex; flex-direction:column; gap:var(--space-md);">
+                {% for skill in skills[:8] %}
+                <div class="skill-bar">
+                    <span class="skill-bar-name">{{ skill.skill_name }}</span>
+                    <div class="skill-bar-track">
+                        <div class="skill-bar-fill" style="width:{{ skill.skill_value }}%; background: {% if skill.skill_value >= 80 %}var(--gradient-success){% elif skill.skill_value >= 50 %}var(--gradient-primary){% else %}var(--gradient-warm){% endif %};" data-width="{{ skill.skill_value }}"></div>
+                    </div>
+                    <span class="skill-bar-value">{{ skill.skill_value }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">🧠</div>
+                <h3>No Skills Yet</h3>
+                <p>Analyze your GitHub profile to discover your skill values</p>
+                <a href="{{ url_for('analyze') }}" class="btn btn-primary">Analyze Now →</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Right Column -->
+        <div class="flex-col gap-lg">
+            <!-- Skill Radar Chart -->
+            <div class="card-flat fade-in stagger-3">
+                <h3 style="margin-bottom:var(--space-md);">📈 Skill Radar</h3>
+                {% if skills %}
+                <canvas id="skillRadar" width="380" height="300"></canvas>
+                {% else %}
+                <div class="empty-state" style="padding:var(--space-xl);">
+                    <p>Analyze your GitHub to see your skill radar</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Badges -->
+            <div class="card-flat fade-in stagger-4">
+                <h3 style="margin-bottom:var(--space-md);">🏆 Badges</h3>
+                {% if badges %}
+                <div class="flex flex-wrap gap-sm">
+                    {% for badge in badges %}
+                    <div class="badge badge-primary" title="{{ badge.description }}">
+                        {{ badge.badge_icon }} {{ badge.badge_name }}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted" style="font-size:0.9rem;">Complete activities to earn badges!</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Sessions -->
+    {% if recent_sessions %}
+    <div class="card-flat fade-in stagger-5" style="margin-top:var(--space-xl);">
+        <div class="flex-between" style="margin-bottom:var(--space-lg);">
+            <h3>📋 Recent Activity</h3>
+            <a href="{{ url_for('sessions') }}" class="btn btn-ghost btn-sm">View All →</a>
+        </div>
+        <div class="table-container" style="border:none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Topic</th>
+                        <th>Peer</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in recent_sessions %}
+                    <tr>
+                        <td><strong>{{ s.topic }}</strong></td>
+                        <td>{{ s.peer_name }}</td>
+                        <td><span class="session-status session-status-{{ s.status }}">{{ s.status }}</span></td>
+                        <td class="text-muted">{{ s.created_at[:10] if s.created_at else 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Animate skill bars
+document.addEventListener('DOMContentLoaded', () => {
+    const bars = document.querySelectorAll('.skill-bar-fill');
+    setTimeout(() => {
+        bars.forEach(bar => {
+            bar.style.width = bar.dataset.width + '%';
+        });
+    }, 300);
+});
+
+// Simple Radar Chart using Canvas
+{% if skills %}
+(function() {
+    const canvas = document.getElementById('skillRadar');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    const skills = [
+        {% for skill in skills[:6] %}
+        { name: "{{ skill.skill_name }}", value: {{ skill.skill_value }} },
+        {% endfor %}
+    ];
+    
+    if (skills.length < 3) return;
+    
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2, cy = H / 2;
+    const R = Math.min(cx, cy) - 50;
+    const n = skills.length;
+    
+    function drawRadar() {
+        ctx.clearRect(0, 0, W, H);
+        
+        // Draw rings
+        for (let ring = 1; ring <= 4; ring++) {
+            const r = (R / 4) * ring;
+            ctx.beginPath();
+            for (let i = 0; i <= n; i++) {
+                const angle = (Math.PI * 2 / n) * i - Math.PI / 2;
+                const x = cx + Math.cos(angle) * r;
+                const y = cy + Math.sin(angle) * r;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        
+        // Draw axes
+        for (let i = 0; i < n; i++) {
+            const angle = (Math.PI * 2 / n) * i - Math.PI / 2;
+            const x = cx + Math.cos(angle) * R;
+            const y = cy + Math.sin(angle) * R;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
+            ctx.stroke();
+        }
+        
+        // Draw data polygon
+        ctx.beginPath();
+        for (let i = 0; i <= n; i++) {
+            const idx = i % n;
+            const angle = (Math.PI * 2 / n) * idx - Math.PI / 2;
+            const r = (skills[idx].value / 100) * R;
+            const x = cx + Math.cos(angle) * r;
+            const y = cy + Math.sin(angle) * r;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        
+        const grad = ctx.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
+        grad.addColorStop(0, 'rgba(124, 92, 245, 0.25)');
+        grad.addColorStop(1, 'rgba(6, 182, 212, 0.25)');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        
+        ctx.strokeStyle = 'rgba(124, 92, 245, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Draw dots and labels
+        for (let i = 0; i < n; i++) {
+            const angle = (Math.PI * 2 / n) * i - Math.PI / 2;
+            
+            // Data dot
+            const r = (skills[i].value / 100) * R;
+            const dx = cx + Math.cos(angle) * r;
+            const dy = cy + Math.sin(angle) * r;
+            ctx.beginPath();
+            ctx.arc(dx, dy, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#7c5cf5';
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Label
+            const lx = cx + Math.cos(angle) * (R + 25);
+            const ly = cy + Math.sin(angle) * (R + 25);
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '11px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(skills[i].name, lx, ly);
+        }
+    }
+    
+    drawRadar();
+})();
+{% endif %}
+</script>
+{% endblock %}

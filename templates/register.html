@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register | SkillSwap</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages">
+        {% for category, message in messages %}
+        <div class="flash-msg flash-{{ category }}" onclick="this.remove()">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="auth-container">
+        <div class="auth-box fade-in">
+            <div class="auth-header">
+                <a href="{{ url_for('index') }}" class="nav-brand" style="justify-content:center; margin-bottom:var(--space-lg);">
+                    <span class="nav-brand-icon">🔄</span>
+                    SkillSwap
+                </a>
+                <h1>Create Account</h1>
+                <p>Join the skill marketplace & start swapping</p>
+            </div>
+            
+            <form method="POST" action="{{ url_for('register') }}" id="register-form">
+                <div class="form-group">
+                    <label class="form-label" for="name">Full Name *</label>
+                    <input type="text" id="name" name="name" class="form-input" placeholder="Yash Patel" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="email">Email *</label>
+                    <input type="email" id="email" name="email" class="form-input" placeholder="yash@college.edu" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="password">Password *</label>
+                    <input type="password" id="password" name="password" class="form-input" placeholder="Min 6 characters" minlength="6" required>
+                </div>
+                
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label class="form-label" for="college">College</label>
+                        <input type="text" id="college" name="college" class="form-input" placeholder="YCCE Nagpur">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="city">City</label>
+                        <input type="text" id="city" name="city" class="form-input" placeholder="Nagpur">
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-lg" style="width:100%;">Create Account →</button>
+            </form>
+            
+            <div class="auth-footer">
+                Already have an account? <a href="{{ url_for('login') }}">Log in</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

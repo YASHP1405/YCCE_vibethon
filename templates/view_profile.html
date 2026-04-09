@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}{{ profile_user.name }}'s Profile{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Profile Header -->
+    <div class="profile-header fade-in">
+        {% if profile_user.avatar_url %}
+        <img src="{{ profile_user.avatar_url }}" alt="Avatar" class="avatar avatar-xl">
+        {% else %}
+        <div class="avatar-placeholder avatar-xl" style="width:96px; height:96px; font-size:2.5rem;">{{ profile_user.name[0] }}</div>
+        {% endif %}
+        
+        <div class="profile-info" style="flex:1;">
+            <div class="flex-between" style="flex-wrap:wrap; gap:var(--space-md);">
+                <div>
+                    <h1>{{ profile_user.name }}</h1>
+                    <p style="margin-top:0.25rem;">{{ profile_user.bio or 'SkillSwap member' }}</p>
+                </div>
+                {% if profile_user.id != user.id %}
+                <form method="POST" action="{{ url_for('request_match', target_id=profile_user.id) }}">
+                    <button type="submit" class="btn btn-primary">🤝 Request Match</button>
+                </form>
+                {% endif %}
+            </div>
+            
+            <div class="profile-meta">
+                {% if profile_user.college %}
+                <span class="profile-meta-item">🎓 {{ profile_user.college }}</span>
+                {% endif %}
+                {% if profile_user.city %}
+                <span class="profile-meta-item">📍 {{ profile_user.city }}</span>
+                {% endif %}
+                {% if profile_user.github_username %}
+                <span class="profile-meta-item">
+                    <a href="https://github.com/{{ profile_user.github_username }}" target="_blank" style="color:var(--text-muted);">
+                        🔗 @{{ profile_user.github_username }}
+                    </a>
+                </span>
+                {% endif %}
+                <span class="profile-meta-item">📊 Score: <strong class="text-gradient">{{ profile_user.overall_score or 0 }}</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <!-- Skills -->
+        <div class="card-flat fade-in stagger-1">
+            <h3 style="margin-bottom:var(--space-lg);">🔬 Skill-Values</h3>
+            {% if skills %}
+            {% for skill in skills %}
+            <div class="skill-bar">
+                <span class="skill-bar-name">{{ skill.skill_name }}</span>
+                <div class="skill-bar-track">
+                    <div class="skill-bar-fill" style="width:{{ skill.skill_value }}%; background:{% if skill.skill_value >= 80 %}var(--gradient-success){% elif skill.skill_value >= 50 %}var(--gradient-primary){% else %}var(--gradient-warm){% endif %};"></div>
+                </div>
+                <span class="skill-bar-value">{{ skill.skill_value }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted">No skills analyzed yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="flex-col gap-lg">
+            <!-- Preferences -->
+            <div class="card-flat fade-in stagger-2">
+                <h3 style="margin-bottom:var(--space-md);">🎯 Learning Preferences</h3>
+                
+                {% set learn_list = profile_user.want_to_learn | default('[]', true) %}
+                {% if learn_list and learn_list != '[]' %}
+                <div style="margin-bottom:var(--space-md);">
+                    <p class="form-label" style="margin-bottom:var(--space-sm);">Wants to Learn</p>
+                    <div class="flex flex-wrap gap-sm">
+                        {% for skill in learn_list | replace('[', '') | replace(']', '') | replace('"', '') | split(',') %}
+                        {% if skill.strip() %}
+                        <span class="badge badge-accent">📚 {{ skill.strip() }}</span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% set teach_list = profile_user.can_teach | default('[]', true) %}
+                {% if teach_list and teach_list != '[]' %}
+                <div>
+                    <p class="form-label" style="margin-bottom:var(--space-sm);">Can Teach</p>
+                    <div class="flex flex-wrap gap-sm">
+                        {% for skill in teach_list | replace('[', '') | replace(']', '') | replace('"', '') | split(',') %}
+                        {% if skill.strip() %}
+                        <span class="badge badge-primary">🎓 {{ skill.strip() }}</span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Badges -->
+            {% if badges %}
+            <div class="card-flat fade-in stagger-3">
+                <h3 style="margin-bottom:var(--space-md);">🏆 Badges</h3>
+                <div class="flex flex-wrap gap-sm">
+                    {% for badge in badges %}
+                    <span class="badge badge-primary" title="{{ badge.description }}">{{ badge.badge_icon }} {{ badge.badge_name }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Reviews -->
+            {% if reviews %}
+            <div class="card-flat fade-in stagger-4">
+                <h3 style="margin-bottom:var(--space-md);">⭐ Reviews</h3>
+                {% for review in reviews %}
+                <div style="padding:var(--space-md); border-bottom:1px solid var(--border-subtle);">
+                    <div class="flex-between">
+                        <strong style="font-size:0.9rem;">{{ review.reviewer_name }}</strong>
+                        <span style="color:var(--warning-400);">{% for i in range(review.rating) %}⭐{% endfor %}</span>
+                    </div>
+                    {% if review.comment %}
+                    <p style="font-size:0.85rem; margin-top:var(--space-xs);">{{ review.comment }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SkillSwap — AI-powered peer skill marketplace. Swap expertise with engineering students in your city.">
+    <title>SkillSwap — Agentic Skill Marketplace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="container flex-between">
+            <a href="/" class="nav-brand">
+                <span class="nav-brand-icon">🔄</span>
+                SkillSwap
+            </a>
+            <div class="flex gap-sm">
+                {% if user %}
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Dashboard →</a>
+                {% else %}
+                <a href="{{ url_for('login') }}" class="btn btn-secondary">Log In</a>
+                <a href="{{ url_for('register') }}" class="btn btn-primary">Get Started →</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages" id="flash-messages">
+        {% for category, message in messages %}
+        <div class="flash-msg flash-{{ category }}" onclick="this.remove()">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Hero Section -->
+    <section class="hero" style="position:relative; overflow:hidden;">
+        <div class="hero-glow hero-glow-1"></div>
+        <div class="hero-glow hero-glow-2"></div>
+        
+        <div class="container" style="position:relative; z-index:1;">
+            <div class="hero-badge fade-in">
+                ⚡ VIBE-A-THON 2026 — Problem Statement #2
+            </div>
+            
+            <h1 class="fade-in stagger-1">
+                Swap Skills.<br>
+                <span class="text-gradient">Grow Together.</span>
+            </h1>
+            
+            <p class="fade-in stagger-2">
+                AI-powered marketplace that analyzes your GitHub profile, 
+                assigns a <strong style="color:var(--primary-400);">Skill-Value</strong>, 
+                and matches you with peers for real-time 1:1 learning sessions.
+            </p>
+            
+            <div class="hero-actions fade-in stagger-3">
+                {% if user %}
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">Open Dashboard →</a>
+                <a href="{{ url_for('analyze') }}" class="btn btn-accent btn-lg">🧠 Analyze GitHub</a>
+                {% else %}
+                <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">Get Started Free →</a>
+                <a href="{{ url_for('login') }}" class="btn btn-secondary btn-lg">Log In</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section style="padding: var(--space-3xl) 0;">
+        <div class="container">
+            <div class="section-header" style="text-align:center;">
+                <h2 class="fade-in">How <span class="text-gradient">SkillSwap</span> Works</h2>
+                <p class="fade-in stagger-1">Three simple steps to start swapping skills with peers</p>
+            </div>
+            
+            <div class="grid-3" style="margin-top:var(--space-2xl);">
+                <div class="card fade-in stagger-1" style="text-align:center;">
+                    <div class="stat-icon stat-icon-primary" style="margin:0 auto var(--space-md); width:64px; height:64px; font-size:1.8rem;">🧠</div>
+                    <h3>1. AI Analyzes</h3>
+                    <p style="margin-top:var(--space-sm);">Connect your GitHub profile. Our AI agent evaluates your repos, languages, and activity to assign a <strong>Skill-Value Score</strong>.</p>
+                </div>
+                
+                <div class="card fade-in stagger-2" style="text-align:center;">
+                    <div class="stat-icon stat-icon-accent" style="margin:0 auto var(--space-md); width:64px; height:64px; font-size:1.8rem;">🤝</div>
+                    <h3>2. Get Matched</h3>
+                    <p style="margin-top:var(--space-sm);">Our matching engine finds peers with <strong>complementary skills</strong>. You teach what you know, learn what you don't.</p>
+                </div>
+                
+                <div class="card fade-in stagger-3" style="text-align:center;">
+                    <div class="stat-icon stat-icon-success" style="margin:0 auto var(--space-md); width:64px; height:64px; font-size:1.8rem;">💬</div>
+                    <h3>3. Start Learning</h3>
+                    <p style="margin-top:var(--space-sm);">Schedule 1:1 learning sessions, chat in real-time, and earn badges as you grow your skill portfolio.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section style="padding: var(--space-3xl) 0; background: var(--gradient-hero);">
+        <div class="container">
+            <div class="section-header" style="text-align:center;">
+                <h2 class="fade-in">✨ Powered by Agentic AI</h2>
+                <p class="fade-in stagger-1">Intelligence that understands code, not just keywords</p>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-card fade-in stagger-1">
+                    <div class="feature-icon stat-icon-primary">📊</div>
+                    <h3>Skill-Value Scoring</h3>
+                    <p>AI analyzes repo quality, code complexity, commit frequency, and tech diversity to generate accurate skill scores from 0-100.</p>
+                </div>
+                
+                <div class="feature-card fade-in stagger-2">
+                    <div class="feature-icon stat-icon-accent">🎯</div>
+                    <h3>Smart Matching</h3>
+                    <p>Complementary skill matching ensures you always find someone who can teach what you want to learn — and vice versa.</p>
+                </div>
+                
+                <div class="feature-card fade-in stagger-3">
+                    <div class="feature-icon stat-icon-success">🏪</div>
+                    <h3>Marketplace</h3>
+                    <p>Browse the marketplace by skill, city, or college. Filter and discover the perfect learning partner instantly.</p>
+                </div>
+                
+                <div class="feature-card fade-in stagger-4">
+                    <div class="feature-icon stat-icon-warning">💬</div>
+                    <h3>Live Sessions</h3>
+                    <p>Built-in chat for real-time 1:1 learning sessions with session tracking, timers, and post-session reviews.</p>
+                </div>
+                
+                <div class="feature-card fade-in stagger-5">
+                    <div class="feature-icon" style="background:rgba(249,115,22,0.15);">🏆</div>
+                    <h3>Leaderboard & Badges</h3>
+                    <p>Compete on leaderboards, earn achievement badges, and build a verified portfolio of skill exchanges.</p>
+                </div>
+                
+                <div class="feature-card fade-in stagger-5">
+                    <div class="feature-icon" style="background:rgba(168,85,247,0.15);">🔍</div>
+                    <h3>GitHub Deep Analysis</h3>
+                    <p>Beyond languages — we analyze repo READMEs, topics, star counts, commit patterns, and project diversity.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section style="padding: var(--space-3xl) 0; text-align:center;">
+        <div class="container">
+            <h2 class="fade-in" style="font-size:2.25rem;">Ready to <span class="text-gradient">Swap Skills</span>?</h2>
+            <p class="fade-in stagger-1" style="font-size:1.1rem; max-width:500px; margin:var(--space-md) auto var(--space-xl);">
+                Join the marketplace where engineering students trade expertise and grow together.
+            </p>
+            <div class="hero-actions fade-in stagger-2">
+                {% if user %}
+                <a href="{{ url_for('analyze') }}" class="btn btn-primary btn-lg">🧠 Analyze My GitHub</a>
+                {% else %}
+                <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">Create Free Account →</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>🔄 SkillSwap — Agentic Skill Marketplace &copy; 2026 | YCCE VIBE-A-THON</p>
+        </div>
+    </footer>
+
+    <script>
+        // Intersection Observer for fade-in animations
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.opacity = '1';
+                    entry.target.style.transform = 'translateY(0)';
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.fade-in').forEach(el => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(20px)';
+            el.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+            observer.observe(el);
+        });
+
+        // Auto-dismiss flashes
+        setTimeout(() => {
+            document.querySelectorAll('.flash-msg').forEach(el => {
+                setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 0);
+            });
+        }, 4000);
+    </script>
+</body>
+</html>

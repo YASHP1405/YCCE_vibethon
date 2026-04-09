@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Matches{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="section-header fade-in">
+        <h2>🤝 My <span class="text-gradient">Matches</span></h2>
+        <p>AI-suggested matches based on complementary skills</p>
+    </div>
+
+    <!-- Pending Received Matches -->
+    {% set pending_received = [] %}
+    {% for m in existing %}
+        {% if m.status == 'pending' and m.user2_id == session['user_id'] %}
+            {% if pending_received.append(m) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+    
+    {% if pending_received %}
+    <div class="card-flat fade-in stagger-1" style="margin-bottom:var(--space-xl); border-color:rgba(245,158,11,0.3);">
+        <h3 style="margin-bottom:var(--space-lg);">📥 Pending Requests ({{ pending_received|length }})</h3>
+        <div class="grid-2">
+            {% for m in pending_received %}
+            <div class="match-card" style="border-color:rgba(245,158,11,0.2);">
+                <div class="match-score-badge" style="background:var(--gradient-warm);">{{ m.match_score }}% match</div>
+                <div class="flex gap-md" style="margin-bottom:var(--space-md);">
+                    {% if m.user1_avatar %}
+                    <img src="{{ m.user1_avatar }}" alt="Avatar" class="avatar avatar-md">
+                    {% else %}
+                    <div class="avatar-placeholder avatar-md" style="width:48px;height:48px;">{{ m.user1_name[0] }}</div>
+                    {% endif %}
+                    <div>
+                        <h4>{{ m.user1_name }}</h4>
+                        <p class="text-muted" style="font-size:0.8rem;">Wants to swap skills with you</p>
+                    </div>
+                </div>
+                <div class="flex gap-sm">
+                    <form method="POST" action="{{ url_for('respond_match', match_id=m.id, action='accept') }}" style="flex:1;">
+                        <button type="submit" class="btn btn-success btn-sm" style="width:100%;">✅ Accept</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('respond_match', match_id=m.id, action='decline') }}" style="flex:1;">
+                        <button type="submit" class="btn btn-danger btn-sm" style="width:100%;">✗ Decline</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Active Matches -->
+    {% set active_matches = [] %}
+    {% for m in existing %}
+        {% if m.status == 'accepted' %}
+            {% if active_matches.append(m) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+
+    {% if active_matches %}
+    <div class="card-flat fade-in stagger-2" style="margin-bottom:var(--space-xl);">
+        <h3 style="margin-bottom:var(--space-lg);">✅ Active Matches ({{ active_matches|length }})</h3>
+        <div class="grid-3">
+            {% for m in active_matches %}
+            {% set peer_name = m.user2_name if m.user1_id == session['user_id'] else m.user1_name %}
+            {% set peer_avatar = m.user2_avatar if m.user1_id == session['user_id'] else m.user1_avatar %}
+            {% set peer_id = m.user2_id if m.user1_id == session['user_id'] else m.user1_id %}
+            <div class="match-card">
+                <div class="match-score-badge">{{ m.match_score }}%</div>
+                <div class="flex gap-md" style="margin-bottom:var(--space-md);">
+                    {% if peer_avatar %}
+                    <img src="{{ peer_avatar }}" alt="Avatar" class="avatar avatar-md">
+                    {% else %}
+                    <div class="avatar-placeholder avatar-md" style="width:48px;height:48px;">{{ peer_name[0] }}</div>
+                    {% endif %}
+                    <div>
+                        <h4>{{ peer_name }}</h4>
+                        <span class="badge badge-success">Active</span>
+                    </div>
+                </div>
+                <div class="flex gap-sm">
+                    <a href="{{ url_for('view_profile', user_id=peer_id) }}" class="btn btn-secondary btn-sm" style="flex:1;">View</a>
+                    <a href="{{ url_for('sessions') }}" class="btn btn-primary btn-sm" style="flex:1;">💬 Session</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- AI Suggested Matches -->
+    <div class="card-flat fade-in stagger-3">
+        <div class="flex-between" style="margin-bottom:var(--space-lg);">
+            <h3>🧠 AI-Suggested Matches</h3>
+            <span class="badge badge-primary">Based on skill complementarity</span>
+        </div>
+        
+        {% if suggested %}
+        <div class="grid-3">
+            {% for match in suggested %}
+            <div class="match-card">
+                <div class="match-score-badge">{{ match.match_score }}%</div>
+                <div class="flex gap-md" style="margin-bottom:var(--space-md);">
+                    {% if match.user.avatar_url %}
+                    <img src="{{ match.user.avatar_url }}" alt="Avatar" class="avatar avatar-md">
+                    {% else %}
+                    <div class="avatar-placeholder avatar-md" style="width:48px;height:48px;">{{ match.user.name[0] }}</div>
+                    {% endif %}
+                    <div>
+                        <h4 style="font-size:0.95rem;">{{ match.user.name }}</h4>
+                        {% if match.user.city %}<p class="text-muted" style="font-size:0.75rem;">📍 {{ match.user.city }}</p>{% endif %}
+                    </div>
+                </div>
+                
+                {% if match.skills %}
+                <div class="flex flex-wrap gap-sm" style="margin-bottom:var(--space-md);">
+                    {% for skill in match.skills[:4] %}
+                    <span class="skill-tag" style="font-size:0.7rem; padding:0.2rem 0.5rem;">{{ skill.skill_name }}: {{ skill.skill_value }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                <div class="flex gap-sm">
+                    <a href="{{ url_for('view_profile', user_id=match.user.id) }}" class="btn btn-secondary btn-sm" style="flex:1;">Profile</a>
+                    <form method="POST" action="{{ url_for('request_match', target_id=match.user.id) }}" style="flex:1;">
+                        <button type="submit" class="btn btn-primary btn-sm" style="width:100%;">🤝 Match</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">🤝</div>
+            <h3>No Matches Yet</h3>
+            <p>Analyze your GitHub and set your learning preferences to get AI-powered match suggestions.</p>
+            <div class="flex flex-center gap-sm">
+                <a href="{{ url_for('analyze') }}" class="btn btn-primary">🧠 Analyze GitHub</a>
+                <a href="{{ url_for('profile') }}" class="btn btn-secondary">Edit Preferences</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

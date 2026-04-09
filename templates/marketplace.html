@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Marketplace{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="flex-between fade-in" style="margin-bottom:var(--space-xl); flex-wrap:wrap; gap:var(--space-md);">
+        <div class="section-header" style="margin-bottom:0;">
+            <h2>🏪 Skill <span class="text-gradient">Marketplace</span></h2>
+            <p>Discover peers and find your perfect skill-swap partner</p>
+        </div>
+        <span class="badge badge-accent" style="font-size:0.85rem; padding:0.4rem 1rem;">{{ profiles|length }} students</span>
+    </div>
+
+    <!-- Filter Bar -->
+    <form class="filter-bar fade-in stagger-1" method="GET" action="{{ url_for('marketplace') }}" id="filter-form">
+        <div style="display:flex; align-items:center; gap:var(--space-sm); color:var(--text-muted); font-size:0.85rem;">🔍 Filters</div>
+        <input type="text" name="skill" class="form-input" placeholder="Search skill (e.g. Python, React)" 
+               value="{{ skill_filter }}" style="min-width:200px;">
+        <select name="city" class="form-select" style="min-width:150px;">
+            <option value="">All Cities</option>
+            {% for c in cities %}
+            <option value="{{ c.city }}" {% if city_filter == c.city %}selected{% endif %}>{{ c.city }}</option>
+            {% endfor %}
+        </select>
+        <select name="college" class="form-select" style="min-width:180px;">
+            <option value="">All Colleges</option>
+            {% for c in colleges %}
+            <option value="{{ c.college }}" {% if college_filter == c.college %}selected{% endif %}>{{ c.college }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        {% if skill_filter or city_filter or college_filter %}
+        <a href="{{ url_for('marketplace') }}" class="btn btn-ghost btn-sm">Clear</a>
+        {% endif %}
+    </form>
+
+    <!-- Profiles Grid -->
+    {% if profiles %}
+    <div class="grid-3 fade-in stagger-2">
+        {% for p in profiles %}
+        <div class="match-card">
+            <!-- Score Badge -->
+            <div class="match-score-badge" title="Overall Score">
+                📊 {{ p.user.overall_score or 0 }}
+            </div>
+            
+            <!-- User Info -->
+            <div class="flex gap-md" style="margin-bottom:var(--space-md);">
+                {% if p.user.avatar_url %}
+                <img src="{{ p.user.avatar_url }}" alt="Avatar" class="avatar avatar-lg">
+                {% else %}
+                <div class="avatar-placeholder avatar-lg" style="width:72px; height:72px; font-size:1.5rem;">{{ p.user.name[0] }}</div>
+                {% endif %}
+                <div>
+                    <h4 style="font-size:1rem;">{{ p.user.name }}</h4>
+                    {% if p.user.college %}<p style="font-size:0.8rem; color:var(--text-muted);">🎓 {{ p.user.college }}</p>{% endif %}
+                    {% if p.user.city %}<p style="font-size:0.8rem; color:var(--text-muted);">📍 {{ p.user.city }}</p>{% endif %}
+                </div>
+            </div>
+            
+            <!-- Skills -->
+            {% if p.skills %}
+            <div style="margin-bottom:var(--space-md);">
+                <p class="form-label" style="margin-bottom:var(--space-xs); font-size:0.7rem;">Skills</p>
+                <div class="flex flex-wrap gap-sm">
+                    {% for skill in p.skills[:5] %}
+                    <span class="skill-tag" style="font-size:0.7rem; padding:0.2rem 0.6rem;">
+                        {{ skill.skill_name }}
+                        <span class="skill-score">{{ skill.skill_value }}</span>
+                    </span>
+                    {% endfor %}
+                    {% if p.skills|length > 5 %}
+                    <span class="text-muted" style="font-size:0.75rem;">+{{ p.skills|length - 5 }} more</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Learning / Teaching -->
+            <div style="margin-bottom:var(--space-md);">
+                {% if p.want_to_learn %}
+                <div style="margin-bottom:var(--space-sm);">
+                    <span style="font-size:0.7rem; color:var(--accent-400); font-weight:600;">WANTS TO LEARN:</span>
+                    <span style="font-size:0.8rem; color:var(--text-secondary);">{{ p.want_to_learn[:3] | join(', ') }}</span>
+                </div>
+                {% endif %}
+                {% if p.can_teach %}
+                <div>
+                    <span style="font-size:0.7rem; color:var(--primary-400); font-weight:600;">CAN TEACH:</span>
+                    <span style="font-size:0.8rem; color:var(--text-secondary);">{{ p.can_teach[:3] | join(', ') }}</span>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Actions -->
+            <div class="flex gap-sm">
+                <a href="{{ url_for('view_profile', user_id=p.user.id) }}" class="btn btn-secondary btn-sm" style="flex:1;">View Profile</a>
+                <form method="POST" action="{{ url_for('request_match', target_id=p.user.id) }}" style="flex:1;">
+                    <button type="submit" class="btn btn-primary btn-sm" style="width:100%;">🤝 Match</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state fade-in">
+        <div class="empty-state-icon">🏪</div>
+        <h3>No Students Found</h3>
+        <p>{% if skill_filter or city_filter or college_filter %}Try adjusting your filters{% else %}Be the first to join! Analyze your GitHub to appear here.{% endif %}</p>
+        {% if skill_filter or city_filter or college_filter %}
+        <a href="{{ url_for('marketplace') }}" class="btn btn-secondary">Clear Filters</a>
+        {% else %}
+        <a href="{{ url_for('analyze') }}" class="btn btn-primary">🧠 Analyze GitHub</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Sessions{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="flex-between fade-in" style="margin-bottom:var(--space-xl); flex-wrap:wrap; gap:var(--space-md);">
+        <div class="section-header" style="margin-bottom:0;">
+            <h2>💬 Learning <span class="text-gradient">Sessions</span></h2>
+            <p>Schedule and manage 1:1 skill-swap sessions</p>
+        </div>
+    </div>
+
+    <!-- Create Session -->
+    {% if accepted_matches %}
+    <div class="card-flat fade-in stagger-1" style="margin-bottom:var(--space-xl);">
+        <h3 style="margin-bottom:var(--space-md);">➕ Schedule New Session</h3>
+        <form method="POST" action="{{ url_for('create_session') }}" class="flex gap-md" style="flex-wrap:wrap; align-items:flex-end;">
+            <div class="form-group" style="flex:1; min-width:150px; margin-bottom:0;">
+                <label class="form-label">Match</label>
+                <select name="match_id" class="form-select" required>
+                    <option value="">Select a match...</option>
+                    {% for m in accepted_matches %}
+                    <option value="{{ m.id }}">{{ m.peer_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="flex:2; min-width:200px; margin-bottom:0;">
+                <label class="form-label">Topic</label>
+                <input type="text" name="topic" class="form-input" placeholder="e.g. React Hooks basics" required>
+            </div>
+            <div class="form-group" style="flex:1; min-width:150px; margin-bottom:0;">
+                <label class="form-label">Schedule</label>
+                <input type="datetime-local" name="scheduled_at" class="form-input">
+            </div>
+            <div class="form-group" style="width:120px; margin-bottom:0;">
+                <label class="form-label">Duration</label>
+                <select name="duration" class="form-select">
+                    <option value="15">15 min</option>
+                    <option value="30" selected>30 min</option>
+                    <option value="45">45 min</option>
+                    <option value="60">60 min</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">⏰ Schedule</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Sessions List -->
+    {% if sessions %}
+    <div class="grid-2 fade-in stagger-2">
+        {% for s in sessions %}
+        <div class="session-card">
+            <div class="flex-between" style="margin-bottom:var(--space-md);">
+                <div class="flex gap-md" style="align-items:center;">
+                    {% if s.peer_avatar %}
+                    <img src="{{ s.peer_avatar }}" alt="Avatar" class="avatar avatar-md">
+                    {% else %}
+                    <div class="avatar-placeholder avatar-md" style="width:48px;height:48px;">{{ s.peer_name[0] }}</div>
+                    {% endif %}
+                    <div>
+                        <h4 style="font-size:1rem;">{{ s.topic }}</h4>
+                        <p class="text-muted" style="font-size:0.8rem;">with {{ s.peer_name }}</p>
+                    </div>
+                </div>
+                <span class="session-status session-status-{{ s.status }}">{{ s.status }}</span>
+            </div>
+            
+            <div class="flex gap-lg" style="margin-bottom:var(--space-md); font-size:0.85rem; color:var(--text-muted);">
+                {% if s.scheduled_at %}
+                <span>📅 {{ s.scheduled_at[:16] }}</span>
+                {% endif %}
+                <span>⏱️ {{ s.duration_mins }} min</span>
+            </div>
+            
+            <a href="{{ url_for('view_session', session_id=s.id) }}" class="btn btn-secondary btn-sm" style="width:100%;">
+                {% if s.status == 'accepted' %}💬 Open Session{% elif s.status == 'completed' %}📋 View Details{% else %}👀 View{% endif %}
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state fade-in">
+        <div class="empty-state-icon">💬</div>
+        <h3>No Sessions Yet</h3>
+        <p>{% if accepted_matches %}Schedule a session with one of your matches above{% else %}Get matched with a peer first to start learning sessions{% endif %}</p>
+        {% if not accepted_matches %}
+        <a href="{{ url_for('matches') }}" class="btn btn-primary">🤝 Find Matches</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

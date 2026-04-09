@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SkillSwap — AI-powered peer skill marketplace for engineering students. Swap expertise, grow together.">
+    <title>{% block title %}SkillSwap{% endblock %} | Agentic Skill Marketplace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% if user %}
+    <nav class="navbar" id="main-nav">
+        <div class="container">
+            <a href="{{ url_for('dashboard') }}" class="nav-brand">
+                <span class="nav-brand-icon">🔄</span>
+                SkillSwap
+            </a>
+            
+            <ul class="nav-links" id="nav-links">
+                <li><a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">📊 Dashboard</a></li>
+                <li><a href="{{ url_for('analyze') }}" class="{% if request.endpoint == 'analyze' %}active{% endif %}">🧠 AI Analyze</a></li>
+                <li><a href="{{ url_for('marketplace') }}" class="{% if request.endpoint == 'marketplace' %}active{% endif %}">🏪 Marketplace</a></li>
+                <li><a href="{{ url_for('matches') }}" class="{% if request.endpoint == 'matches' %}active{% endif %}">🤝 Matches</a></li>
+                <li><a href="{{ url_for('sessions') }}" class="{% if request.endpoint == 'sessions' %}active{% endif %}">💬 Sessions</a></li>
+                <li><a href="{{ url_for('leaderboard') }}" class="{% if request.endpoint == 'leaderboard' %}active{% endif %}">🏆 Leaderboard</a></li>
+            </ul>
+            
+            <div class="nav-user">
+                <a href="{{ url_for('profile') }}" class="btn btn-ghost btn-sm">
+                    {% if user.avatar_url %}
+                    <img src="{{ user.avatar_url }}" alt="Avatar" class="nav-avatar">
+                    {% else %}
+                    <span class="avatar-placeholder avatar-sm" style="font-size:0.7rem;">{{ user.name[0] }}</span>
+                    {% endif %}
+                    {{ user.name.split(' ')[0] }}
+                </a>
+                <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm" title="Logout">🚪</a>
+            </div>
+            
+            <button class="hamburger" id="hamburger" onclick="document.getElementById('nav-links').classList.toggle('active')">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </nav>
+    {% endif %}
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages" id="flash-messages">
+        {% for category, message in messages %}
+        <div class="flash-msg flash-{{ category }}" onclick="this.remove()">
+            {% if category == 'success' %}✅{% elif category == 'error' %}❌{% elif category == 'warning' %}⚠️{% else %}ℹ️{% endif %}
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% if user %}
+    <footer class="footer">
+        <div class="container">
+            <p>🔄 SkillSwap — Agentic Skill Marketplace &copy; 2026 | Built for VIBE-A-THON</p>
+        </div>
+    </footer>
+    {% endif %}
+
+    <script>
+        // Auto-dismiss flash messages
+        setTimeout(() => {
+            document.querySelectorAll('.flash-msg').forEach((el, i) => {
+                setTimeout(() => {
+                    el.style.transition = 'opacity 0.3s, transform 0.3s';
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateX(60px)';
+                    setTimeout(() => el.remove(), 300);
+                }, i * 200);
+            });
+        }, 4000);
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

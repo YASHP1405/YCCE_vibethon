@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}My Profile{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="section-header fade-in">
+        <h2>👤 My <span class="text-gradient">Profile</span></h2>
+        <p>Update your info, skills, and learning preferences</p>
+    </div>
+
+    <div class="grid-2">
+        <!-- Edit Form -->
+        <div class="card-flat fade-in stagger-1">
+            <h3 style="margin-bottom:var(--space-lg);">✏️ Edit Profile</h3>
+            <form method="POST" action="{{ url_for('profile') }}">
+                <div class="form-group">
+                    <label class="form-label" for="name">Full Name</label>
+                    <input type="text" id="name" name="name" class="form-input" value="{{ user.name }}" required>
+                </div>
+                
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label class="form-label" for="college">College</label>
+                        <input type="text" id="college" name="college" class="form-input" value="{{ user.college or '' }}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="city">City</label>
+                        <input type="text" id="city" name="city" class="form-input" value="{{ user.city or '' }}">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="bio">Bio</label>
+                    <textarea id="bio" name="bio" class="form-textarea" rows="3" placeholder="Tell others about yourself...">{{ user.bio or '' }}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="github_username">GitHub Username</label>
+                    <input type="text" id="github_username" name="github_username" class="form-input" 
+                           value="{{ user.github_username or '' }}" placeholder="octocat">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="want_to_learn">Want to Learn (comma-separated)</label>
+                    <input type="text" id="want_to_learn" name="want_to_learn" class="form-input" 
+                           value="{% if user.want_to_learn %}{{ user.want_to_learn | replace('[', '') | replace(']', '') | replace('\"', '') }}{% endif %}"
+                           placeholder="Flutter, Machine Learning, React">
+                    <span class="form-hint">Skills you want to learn from peers</span>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="can_teach">Can Teach (comma-separated)</label>
+                    <input type="text" id="can_teach" name="can_teach" class="form-input" 
+                           value="{% if user.can_teach %}{{ user.can_teach | replace('[', '') | replace(']', '') | replace('\"', '') }}{% endif %}"
+                           placeholder="Python, Web Development, Git">
+                    <span class="form-hint">Skills you can teach others</span>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="availability">Availability</label>
+                    <select id="availability" name="availability" class="form-select">
+                        <option value="Flexible" {% if user.availability == 'Flexible' %}selected{% endif %}>🕐 Flexible</option>
+                        <option value="Weekdays" {% if user.availability == 'Weekdays' %}selected{% endif %}>📅 Weekdays Only</option>
+                        <option value="Weekends" {% if user.availability == 'Weekends' %}selected{% endif %}>🏖️ Weekends Only</option>
+                        <option value="Evenings" {% if user.availability == 'Evenings' %}selected{% endif %}>🌙 Evenings Only</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-lg" style="width:100%;">Save Changes ✅</button>
+            </form>
+        </div>
+
+        <!-- Preview -->
+        <div class="flex-col gap-lg">
+            <div class="card-flat fade-in stagger-2">
+                <h3 style="margin-bottom:var(--space-lg);">👀 Preview</h3>
+                <div style="text-align:center; margin-bottom:var(--space-lg);">
+                    {% if user.avatar_url %}
+                    <img src="{{ user.avatar_url }}" alt="Avatar" class="avatar avatar-2xl" style="margin-bottom:var(--space-md);">
+                    {% else %}
+                    <div class="avatar-placeholder avatar-2xl" style="width:128px; height:128px; font-size:3rem; margin:0 auto var(--space-md);">{{ user.name[0] }}</div>
+                    {% endif %}
+                    <h3>{{ user.name }}</h3>
+                    <p>{{ user.bio or 'No bio yet' }}</p>
+                    <div class="flex flex-center gap-md" style="margin-top:var(--space-sm);">
+                        {% if user.college %}<span class="text-muted" style="font-size:0.85rem;">🎓 {{ user.college }}</span>{% endif %}
+                        {% if user.city %}<span class="text-muted" style="font-size:0.85rem;">📍 {{ user.city }}</span>{% endif %}
+                    </div>
+                </div>
+                
+                <div style="margin-bottom:var(--space-md);">
+                    <p style="font-size:0.8rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:var(--space-sm);">Overall Score</p>
+                    <div class="flex gap-sm" style="align-items:center;">
+                        <div class="progress-bar" style="flex:1;">
+                            <div class="progress-bar-fill" style="width:{{ user.overall_score or 0 }}%;"></div>
+                        </div>
+                        <span class="text-gradient" style="font-weight:800;">{{ user.overall_score or 0 }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Skills -->
+            <div class="card-flat fade-in stagger-3">
+                <h3 style="margin-bottom:var(--space-md);">🔬 Current Skills</h3>
+                {% if skills %}
+                <div class="flex flex-wrap gap-sm">
+                    {% for skill in skills %}
+                    <span class="skill-tag">
+                        {{ skill.skill_name }}
+                        <span class="skill-score">{{ skill.skill_value }}</span>
+                    </span>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">No skills yet. <a href="{{ url_for('analyze') }}">Analyze your GitHub</a> to get started.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}Session — {{ session.topic }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Session Header -->
+    <div class="card-flat fade-in" style="margin-bottom:var(--space-xl);">
+        <div class="flex-between" style="flex-wrap:wrap; gap:var(--space-md);">
+            <div class="flex gap-md" style="align-items:center;">
+                {% if session.peer_avatar %}
+                <img src="{{ session.peer_avatar }}" alt="Avatar" class="avatar avatar-lg">
+                {% else %}
+                <div class="avatar-placeholder avatar-lg" style="width:72px;height:72px;font-size:1.5rem;">{{ session.peer_name[0] }}</div>
+                {% endif %}
+                <div>
+                    <h2 style="font-size:1.5rem;">{{ session.topic }}</h2>
+                    <p>Session with <strong>{{ session.peer_name }}</strong></p>
+                    <div class="flex gap-md" style="margin-top:var(--space-xs);">
+                        <span class="session-status session-status-{{ session.status }}">{{ session.status }}</span>
+                        {% if session.scheduled_at %}<span class="text-muted" style="font-size:0.8rem;">📅 {{ session.scheduled_at[:16] }}</span>{% endif %}
+                        <span class="text-muted" style="font-size:0.8rem;">⏱️ {{ session.duration_mins }} min</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex gap-sm">
+                {% if session.status == 'requested' and session.requester_id != user.id %}
+                <form method="POST" action="{{ url_for('respond_session', session_id=session.id, action='accept') }}">
+                    <button type="submit" class="btn btn-success">✅ Accept</button>
+                </form>
+                <form method="POST" action="{{ url_for('respond_session', session_id=session.id, action='decline') }}">
+                    <button type="submit" class="btn btn-danger">✗ Decline</button>
+                </form>
+                {% elif session.status == 'accepted' %}
+                <form method="POST" action="{{ url_for('respond_session', session_id=session.id, action='complete') }}">
+                    <button type="submit" class="btn btn-success">✅ Mark Complete</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if session.status in ['accepted', 'completed'] %}
+    <div class="grid-2">
+        <!-- Chat -->
+        <div class="fade-in stagger-1">
+            <h3 style="margin-bottom:var(--space-md);">💬 Chat</h3>
+            <div class="chat-container" id="chat-container">
+                <div class="chat-messages" id="chat-messages">
+                    {% if messages %}
+                    {% for msg in messages %}
+                    <div class="chat-bubble {% if msg.sender_id == user.id %}chat-bubble-mine{% else %}chat-bubble-other{% endif %}">
+                        {% if msg.sender_id != user.id %}
+                        <div class="chat-bubble-sender">{{ msg.sender_name }}</div>
+                        {% endif %}
+                        {{ msg.content }}
+                        <div class="chat-bubble-time">{{ msg.sent_at[-8:-3] if msg.sent_at else '' }}</div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="empty-state" style="padding:var(--space-xl);">
+                        <p class="text-muted">No messages yet. Start the conversation! 💬</p>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if session.status == 'accepted' %}
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="Type a message..." 
+                           onkeypress="if(event.key==='Enter')sendMessage()">
+                    <button class="btn btn-primary btn-icon" onclick="sendMessage()">➤</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Session Details & Review -->
+        <div class="flex-col gap-lg">
+            <!-- Session Timer (if accepted) -->
+            {% if session.status == 'accepted' %}
+            <div class="card-flat fade-in stagger-2" style="text-align:center;">
+                <h3 style="margin-bottom:var(--space-md);">⏱️ Session Timer</h3>
+                <div id="timer" style="font-size:3rem; font-weight:800; font-family:'JetBrains Mono', monospace;" class="text-gradient">
+                    {{ "%02d"|format(session.duration_mins) }}:00
+                </div>
+                <div class="flex flex-center gap-sm" style="margin-top:var(--space-md);">
+                    <button class="btn btn-primary btn-sm" id="timer-start" onclick="startTimer()">▶ Start</button>
+                    <button class="btn btn-secondary btn-sm" id="timer-pause" onclick="pauseTimer()" style="display:none;">⏸ Pause</button>
+                    <button class="btn btn-ghost btn-sm" onclick="resetTimer()">↻ Reset</button>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Notes -->
+            <div class="card-flat fade-in stagger-3">
+                <h3 style="margin-bottom:var(--space-md);">📝 Session Notes</h3>
+                <p style="font-size:0.9rem;">{{ session.notes or 'No notes added yet.' }}</p>
+            </div>
+
+            <!-- Review -->
+            {% if session.status == 'completed' %}
+            <div class="card-flat fade-in stagger-4">
+                <h3 style="margin-bottom:var(--space-md);">⭐ Leave a Review</h3>
+                {% if existing_review %}
+                <p class="text-muted">You've already reviewed this session. Thank you!</p>
+                {% else %}
+                <form method="POST" action="{{ url_for('submit_review', session_id=session.id) }}">
+                    <div class="form-group">
+                        <label class="form-label">Rating</label>
+                        <div class="star-rating">
+                            {% for i in range(5, 0, -1) %}
+                            <input type="radio" name="rating" value="{{ i }}" id="star{{ i }}" {% if i == 5 %}checked{% endif %}>
+                            <label for="star{{ i }}">⭐</label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Comment</label>
+                        <textarea name="comment" class="form-textarea" rows="3" placeholder="How was the session?"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%;">Submit Review</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Chat polling
+let lastMsgId = {{ messages[-1].id if messages else 0 }};
+
+function sendMessage() {
+    const input = document.getElementById('chat-input');
+    const content = input.value.trim();
+    if (!content) return;
+    
+    fetch('{{ url_for("send_message", session_id=session.id) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: 'content=' + encodeURIComponent(content)
+    }).then(() => {
+        input.value = '';
+        pollMessages();
+    });
+}
+
+function pollMessages() {
+    fetch('{{ url_for("get_messages", session_id=session.id) }}?after=' + lastMsgId)
+    .then(r => r.json())
+    .then(messages => {
+        const container = document.getElementById('chat-messages');
+        // Remove empty state
+        const emptyState = container.querySelector('.empty-state');
+        if (emptyState && messages.length > 0) emptyState.remove();
+        
+        messages.forEach(msg => {
+            lastMsgId = Math.max(lastMsgId, msg.id);
+            const div = document.createElement('div');
+            div.className = 'chat-bubble ' + (msg.is_mine ? 'chat-bubble-mine' : 'chat-bubble-other');
+            
+            let html = '';
+            if (!msg.is_mine) html += `<div class="chat-bubble-sender">${msg.sender_name}</div>`;
+            html += msg.content;
+            html += `<div class="chat-bubble-time">${msg.sent_at ? msg.sent_at.slice(-8, -3) : ''}</div>`;
+            div.innerHTML = html;
+            container.appendChild(div);
+        });
+        
+        container.scrollTop = container.scrollHeight;
+    });
+}
+
+// Poll every 3 seconds
+setInterval(pollMessages, 3000);
+
+// Scroll to bottom
+document.addEventListener('DOMContentLoaded', () => {
+    const container = document.getElementById('chat-messages');
+    if (container) container.scrollTop = container.scrollHeight;
+});
+
+// Timer
+let timerInterval = null;
+let timerSeconds = {{ session.duration_mins }} * 60;
+let timerRunning = false;
+
+function updateTimerDisplay() {
+    const mins = Math.floor(timerSeconds / 60);
+    const secs = timerSeconds % 60;
+    const el = document.getElementById('timer');
+    if (el) el.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function startTimer() {
+    if (timerRunning) return;
+    timerRunning = true;
+    document.getElementById('timer-start').style.display = 'none';
+    document.getElementById('timer-pause').style.display = '';
+    timerInterval = setInterval(() => {
+        timerSeconds--;
+        updateTimerDisplay();
+        if (timerSeconds <= 0) {
+            clearInterval(timerInterval);
+            timerRunning = false;
+            alert('⏰ Session time is up!');
+        }
+    }, 1000);
+}
+
+function pauseTimer() {
+    clearInterval(timerInterval);
+    timerRunning = false;
+    document.getElementById('timer-start').style.display = '';
+    document.getElementById('timer-pause').style.display = 'none';
+}
+
+function resetTimer() {
+    pauseTimer();
+    timerSeconds = {{ session.duration_mins }} * 60;
+    updateTimerDisplay();
+}
+</script>
+{% endblock %}
