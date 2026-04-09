@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import sqlite3
 import secrets
@@ -41,22 +42,18 @@ if GROQ_AVAILABLE and GROQ_API_KEY:
     groq_client = Groq(api_key=GROQ_API_KEY)
 
 # ─── Firebase Admin Setup ───────────────────────────────────────────────
+# Firebase Admin is optional — only needed for server-side token verification.
+# Without it the app uses the frontend-supplied user data (trusted for dev).
 firebase_app = None
 FIREBASE_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'firebase-service-account.json')
 
-if FIREBASE_ADMIN_AVAILABLE:
+if FIREBASE_ADMIN_AVAILABLE and os.path.exists(FIREBASE_CONFIG_PATH):
     try:
-        if os.path.exists(FIREBASE_CONFIG_PATH):
-            cred = credentials.Certificate(FIREBASE_CONFIG_PATH)
-            firebase_app = firebase_admin.initialize_app(cred)
-            print("✅ Firebase Admin initialized with service account")
-        else:
-            # Initialize without credentials (for development — uses FIREBASE_AUTH_EMULATOR_HOST or GOOGLE_APPLICATION_CREDENTIALS)
-            firebase_app = firebase_admin.initialize_app()
-            print("⚠️ Firebase Admin initialized without service account (limited functionality)")
+        cred = credentials.Certificate(FIREBASE_CONFIG_PATH)
+        firebase_app = firebase_admin.initialize_app(cred)
+        print("✅ Firebase Admin SDK initialized")
     except Exception as e:
-        print(f"⚠️ Firebase Admin init error: {e}")
-        firebase_app = None
+        print(f"ℹ️  Firebase Admin optional — running without it: {e}")
 
 # Firebase Web Config (injected into templates)
 FIREBASE_WEB_CONFIG = {
@@ -199,14 +196,24 @@ def login_required(f):
         if 'user_id' not in session:
             flash('Please login first.', 'warning')
             return redirect(url_for('login'))
+        # Verify the user_id actually exists in DB (handles wiped DB / stale cookies)
+        db = get_db()
+        user = db.execute('SELECT id FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+        if not user:
+            session.clear()
+            flash('Session expired. Please sign in again.', 'warning')
+            return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated
 
 def get_current_user():
-    if 'user_id' in session:
-        db = get_db()
-        return db.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
-    return None
+    if 'user_id' not in session:
+        return None
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+    if not user:
+        session.clear()  # Auto-clear stale session
+    return user
 
 def verify_firebase_token(id_token):
     """Verify Firebase ID token and return decoded claims."""
@@ -262,8 +269,13 @@ def fetch_github_data(username):
     
     try:
         user_resp = http_requests.get(f'https://api.github.com/users/{username}', headers=headers, timeout=10)
+        
+        if user_resp.status_code == 403:
+            return {'rate_limit': True}
+            
         if user_resp.status_code != 200:
             return None
+            
         user_data = user_resp.json()
         
         repos_resp = http_requests.get(
@@ -378,13 +390,29 @@ Rules:
         if text.startswith('```'):
             text = text.split('\n', 1)[1]
             text = text.rsplit('```', 1)[0]
-        return json.loads(text)
+        
+        try:
+            return json.loads(text)
+        except Exception as json_e:
+            return generate_fallback_analysis(github_data)
+            
     except Exception as e:
         print(f"Groq AI error: {e}")
         return generate_fallback_analysis(github_data)
 
 def generate_fallback_analysis(github_data):
     """Generate a reasonable analysis without AI."""
+    if not github_data:
+        return {
+            'overall_score': 0,
+            'skills': [],
+            'strengths': [],
+            'growth_areas': ['Connect more GitHub repositories'],
+            'profile_summary': "No GitHub data available for analysis.",
+            'recommended_to_learn': ['Programming basics'],
+            'teaching_potential': []
+        }
+        
     languages = github_data.get('languages', {})
     total_bytes = sum(languages.values()) if languages else 1
     
@@ -507,58 +535,77 @@ def register():
 
 @app.route('/auth/firebase-callback', methods=['POST'])
 def firebase_callback():
-    """Receive Firebase ID token from frontend, verify it, create/get user."""
+    """Receive Firebase user data from frontend JS SDK, create/get user in DB."""
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     
+    email = data.get('email', '').strip()
+    name = data.get('displayName', '').strip()
+    photo = data.get('photoURL', '').strip()
+    uid = data.get('uid', '').strip()
+
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    # If name is empty, derive from email
+    if not name:
+        name = email.split('@')[0].replace('.', ' ').title()
+
+    # Optional: verify with Firebase Admin SDK if available
     id_token = data.get('idToken', '')
-    
-    # Try to verify with Firebase Admin
     decoded = verify_firebase_token(id_token)
-    
     if decoded:
-        # Firebase Admin verified the token
-        user = get_or_create_firebase_user(decoded)
-    else:
-        # Fallback: trust the frontend data (for dev without service account)
-        email = data.get('email', '')
-        name = data.get('displayName', '') or email.split('@')[0]
-        photo = data.get('photoURL', '')
-        uid = data.get('uid', '')
-        
-        if not email:
-            return jsonify({'error': 'Email is required'}), 400
-        
-        db = get_db()
+        # Trust the verified token data
+        uid = decoded.get('uid', uid)
+        email = decoded.get('email', email)
+        name = decoded.get('name', name) or name
+        photo = decoded.get('picture', photo) or photo
+
+    db = get_db()
+
+    # Find by firebase_uid first, then by email
+    user = None
+    if uid:
+        user = db.execute('SELECT * FROM users WHERE firebase_uid = ?', (uid,)).fetchone()
+    if not user:
         user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-        
-        if not user:
-            db.execute('''
-                INSERT INTO users (firebase_uid, name, email, photo_url, avatar_url) 
-                VALUES (?, ?, ?, ?, ?)
-            ''', (uid, name, email, photo, photo))
+    
+    if user:
+        # Update profile data
+        updates = []
+        params = []
+        if uid and not user['firebase_uid']:
+            updates.append('firebase_uid = ?'); params.append(uid)
+        if photo and photo != user['photo_url']:
+            updates.append('photo_url = ?'); params.append(photo)
+            updates.append('avatar_url = ?'); params.append(photo)
+        if name and name != user['name']:
+            updates.append('name = ?'); params.append(name)
+        if updates:
+            params.append(user['id'])
+            db.execute(f'UPDATE users SET {", ".join(updates)} WHERE id = ?', params)
             db.commit()
-            user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-        else:
-            # Update firebase_uid and photo if needed
-            if uid and not user['firebase_uid']:
-                db.execute('UPDATE users SET firebase_uid = ? WHERE id = ?', (uid, user['id']))
-            if photo and photo != user['photo_url']:
-                db.execute('UPDATE users SET photo_url = ?, avatar_url = ? WHERE id = ?', 
-                          (photo, photo, user['id']))
-            db.commit()
-            user = db.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+        user = db.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+    else:
+        # New user — create record
+        db.execute('''
+            INSERT INTO users (firebase_uid, name, email, photo_url, avatar_url) 
+            VALUES (?, ?, ?, ?, ?)
+        ''', (uid, name, email, photo, photo))
+        db.commit()
+        user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
     
     if user:
         session['user_id'] = user['id']
+        session.permanent = True
         return jsonify({
             'success': True, 
             'redirect': url_for('dashboard'),
-            'message': 'Welcome to SkillSwap! 🎉'
+            'isNew': not bool(user['college'])
         })
     
-    return jsonify({'error': 'Authentication failed'}), 401
+    return jsonify({'error': 'Authentication failed. Please try again.'}), 401
 
 @app.route('/logout')
 def logout():
@@ -644,6 +691,10 @@ def view_profile(user_id):
     if not user:
         flash('User not found.', 'error')
         return redirect(url_for('marketplace'))
+        
+    user_dict = dict(user)
+    user_dict['want_to_learn'] = json.loads(user['want_to_learn']) if user['want_to_learn'] else []
+    user_dict['can_teach'] = json.loads(user['can_teach']) if user['can_teach'] else []
     
     skills = db.execute('SELECT * FROM skills WHERE user_id = ? ORDER BY skill_value DESC', (user_id,)).fetchall()
     reviews = db.execute('''
@@ -657,7 +708,7 @@ def view_profile(user_id):
     badges = db.execute('SELECT * FROM badges WHERE user_id = ?', (user_id,)).fetchall()
     
     current_user = get_current_user()
-    return render_template('view_profile.html', profile_user=user, skills=skills, 
+    return render_template('view_profile.html', profile_user=user_dict, skills=skills, 
                          reviews=reviews, badges=badges, user=current_user)
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -677,8 +728,11 @@ def analyze():
             return redirect(url_for('analyze'))
         
         github_data = fetch_github_data(github_username)
+        if github_data and github_data.get('rate_limit'):
+            flash('GitHub API Rate Limit exceeded (60 requests/hr). Please add GITHUB_TOKEN to .env to analyze without limits!', 'warning')
+            return redirect(url_for('analyze'))
         if not github_data:
-            flash('Could not fetch GitHub data. Check the username.', 'error')
+            flash(f'Could not fetch GitHub data for {github_username}. Check the username.', 'error')
             return redirect(url_for('analyze'))
         
         analysis = analyze_with_ai(github_data)

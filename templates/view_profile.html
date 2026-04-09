@@ -68,29 +68,23 @@
             <div class="card-flat fade-in stagger-2">
                 <h3 style="margin-bottom:var(--space-md);">🎯 Learning Preferences</h3>
                 
-                {% set learn_list = profile_user.want_to_learn | default('[]', true) %}
-                {% if learn_list and learn_list != '[]' %}
+                {% if profile_user.want_to_learn and profile_user.want_to_learn|length > 0 %}
                 <div style="margin-bottom:var(--space-md);">
                     <p class="form-label" style="margin-bottom:var(--space-sm);">Wants to Learn</p>
                     <div class="flex flex-wrap gap-sm">
-                        {% for skill in learn_list | replace('[', '') | replace(']', '') | replace('"', '') | split(',') %}
-                        {% if skill.strip() %}
-                        <span class="badge badge-accent">📚 {{ skill.strip() }}</span>
-                        {% endif %}
+                        {% for skill in profile_user.want_to_learn %}
+                        <span class="badge badge-accent">📚 {{ skill }}</span>
                         {% endfor %}
                     </div>
                 </div>
                 {% endif %}
                 
-                {% set teach_list = profile_user.can_teach | default('[]', true) %}
-                {% if teach_list and teach_list != '[]' %}
+                {% if profile_user.can_teach and profile_user.can_teach|length > 0 %}
                 <div>
                     <p class="form-label" style="margin-bottom:var(--space-sm);">Can Teach</p>
                     <div class="flex flex-wrap gap-sm">
-                        {% for skill in teach_list | replace('[', '') | replace(']', '') | replace('"', '') | split(',') %}
-                        {% if skill.strip() %}
-                        <span class="badge badge-primary">🎓 {{ skill.strip() }}</span>
-                        {% endif %}
+                        {% for skill in profile_user.can_teach %}
+                        <span class="badge badge-primary">🎓 {{ skill }}</span>
                         {% endfor %}
                     </div>
                 </div>
